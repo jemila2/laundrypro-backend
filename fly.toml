@@ -1,0 +1,17 @@
+app = "laundrypro-backend"
+
+[build]
+  builder = "heroku/buildpacks:20"
+
+[env]
+  PORT = "10000"
+
+[http_service]
+  internal_port = 10000
+  force_https = true
+
+[[http_service.checks]]
+  interval = "30s"
+  timeout = "5s"
+  method = "GET"
+  path = "/api/health"
