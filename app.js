@@ -689,8 +689,12 @@ const { createClient } = require('redis'); // Moved to top with other imports
 
 const app = express();
 
-// ✅ CRITICAL FIX: Trust proxy for Render.com
-app.set('trust proxy', true);
+// ✅ FIX: Proper trust proxy setting for rate limiting
+app.set('trust proxy', 1); // Trust only the first proxy hop
+// OR
+app.set('trust proxy', 'loopback'); // Trust localhost only
+// OR for production:
+app.set('trust proxy', ['loopback', 'linklocal', 'uniquelocal']);
 
 // Check required environment variables
 // ADD REDIS ENV VARS TO THE CHECKLIST
@@ -764,9 +768,10 @@ const corsOptions = {
       'https://jemila2.github.io',
       'https://jemila2.github.io/cdclient-1',
       'http://localhost:3000',
-      'http://localhost:3001',
+      'http://localhost:10000',
       'http://localhost:5173',
-      'https://cdclient-1.onrender.com'
+      'https://cdclient-1.onrender.com',
+      'https://laundrypro-backend-production.up.railway.app'
     ];
     
     if (!origin || 
