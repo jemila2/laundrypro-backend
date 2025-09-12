@@ -98,6 +98,32 @@ router.post('/register-admin', async (req, res) => {
 });
 
 
+
+// Add this route to your admin routes (before the protect middleware)
+router.get('/admin-exists', async (req, res) => {
+  try {
+    const adminCount = await User.countDocuments({ 
+      role: 'admin',
+      isActive: true 
+    });
+    
+    res.json({
+      adminExists: adminCount > 0,
+      count: adminCount,
+      message: adminCount > 0 ? 'Admin user exists' : 'No admin user found'
+    });
+    
+  } catch (error) {
+    console.error('Error checking admin existence:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      adminExists: false,
+      message: 'Error checking admin status'
+    });
+  }
+});
+
+
 router.use(protect);
 router.use(authorize('admin'));
 
