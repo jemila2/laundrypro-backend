@@ -1,4 +1,3 @@
-
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const router = express.Router();
@@ -17,116 +16,102 @@ const {
   updateUserRole,
   getAllTasks,
   createTask,
+  getAllOrders
 } = require('../controllers/adminController');
 
-const { getAllOrders } = require('../controllers/orderController');
+// ================= PUBLIC ROUTES (No authentication) =================
 
-router.get('/admins/count', async (req, res) => {
+// Check if admin exists
+router.get('/admin-exists', async (req, res) => {
   try {
     const adminCount = await User.countDocuments({ role: 'admin' });
-    res.json({ count: adminCount });
+    res.json({ adminExists: adminCount > 0 });
   } catch (error) {
-    console.error('Error counting admins:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error('Admin exists check error:', error);
+    res.status(500).json({ error: 'Failed to check admin existence' });
   }
 });
 
+// Register admin
 router.post('/register-admin', async (req, res) => {
   try {
     const { name, email, password, secretKey } = req.body;
-    
-    if (!name || !email || !password || !secretKey) {
-      return res.status(400).json({ error: 'Missing required fields' });
+
+    // Check if admin already exists
+    const existingAdmin = await User.findOne({ role: 'admin' });
+    if (existingAdmin) {
+      return res.status(403).json({ 
+        success: false,
+        error: 'Admin account already exists. Only one admin allowed.' 
+      });
     }
 
+    // Validate secret key
     const expectedSecretKey = process.env.ADMIN_SECRET_KEY || 'ADMIN_SETUP_2024';
     if (secretKey !== expectedSecretKey) {
-      return res.status(403).json({ error: 'Invalid admin secret key' });
+      return res.status(403).json({ 
+        success: false,
+        error: 'Invalid admin setup key' 
+      });
     }
-    
-    // Check if we already have an admin
-    const existingAdminCount = await User.countDocuments({ role: 'admin' });
-    if (existingAdminCount > 0) {
-      return res.status(403).json({ error: 'Admin already exists. Cannot create additional admin accounts.' });
-    }
-    
-    // Check if user already exists
-    const existingUser = await User.findOne({ email: email.toLowerCase() });
+
+    // Check if email already exists
+    const existingUser = await User.findOne({ email });
     if (existingUser) {
-      return res.status(409).json({ error: 'User with this email already exists' });
+      return res.status(400).json({ 
+        success: false,
+        error: 'User with this email already exists' 
+      });
     }
-    
-    // Hash password
-    const saltRounds = 12;
-    const hashedPassword = await bcrypt.hash(password, saltRounds);
-    
-    // Create new admin user
-    const newUser = new User({
-      name: name.trim(),
-      email: email.toLowerCase(),
+
+    // Create admin user
+    const hashedPassword = await bcrypt.hash(password, 12);
+    const adminUser = new User({
+      name,
+      email,
       password: hashedPassword,
-      role: 'admin'
+      role: 'admin',
+      isVerified: true
     });
-    
-    await newUser.save();
-    
-    console.log('New admin user created:', { id: newUser._id, email: newUser.email });
-    
+
+    await adminUser.save();
+
     res.status(201).json({
+      success: true,
       message: 'Admin account created successfully',
-      user: { 
-        id: newUser._id, 
-        name: newUser.name, 
-        email: newUser.email, 
-        role: newUser.role 
+      user: {
+        id: adminUser._id,
+        name: adminUser.name,
+        email: adminUser.email,
+        role: adminUser.role
       }
     });
+
   } catch (error) {
-    console.error('Error creating admin account:', error);
-    
-    if (error.code === 11000) {
-      return res.status(409).json({ error: 'User with this email already exists' });
-    }
-    
-    if (error.name === 'ValidationError') {
-      const errors = Object.values(error.errors).map(err => err.message);
-      return res.status(400).json({ error: errors.join(', ') });
-    }
-    
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-
-
-// Add this route to your admin routes (before the protect middleware)
-router.get('/admin-exists', async (req, res) => {
-  try {
-    const adminCount = await User.countDocuments({ 
-      role: 'admin',
-      isActive: true 
-    });
-    
-    res.json({
-      adminExists: adminCount > 0,
-      count: adminCount,
-      message: adminCount > 0 ? 'Admin user exists' : 'No admin user found'
-    });
-    
-  } catch (error) {
-    console.error('Error checking admin existence:', error);
+    console.error('Admin registration error:', error);
     res.status(500).json({ 
-      error: 'Internal server error',
-      adminExists: false,
-      message: 'Error checking admin status'
+      success: false,
+      error: 'Failed to create admin account: ' + error.message 
     });
   }
 });
 
+// Get admin count (public for initial setup check)
+router.get('/admins/count', async (req, res) => {
+  try {
+    const adminCount = await User.countDocuments({ role: 'admin' });
+    res.json({ success: true, count: adminCount });
+  } catch (error) {
+    console.error('Error counting admins:', error);
+    res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
 
+// ================= PROTECTED ROUTES (Require admin authentication) =================
 router.use(protect);
 router.use(authorize('admin'));
 
+// User management routes
 router.route('/users')
   .get(getAllUsers)
   .post(createUser);
@@ -138,178 +123,15 @@ router.route('/users/:id')
 
 router.put('/users/:id/role', updateUserRole);
 
+// Task management routes
 router.route('/tasks')
   .get(getAllTasks)
   .post(createTask);
 
+// Order management routes
 router.get('/orders', getAllOrders);
 
-router.get('/users', async (req, res) => {
-  try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
-    const skip = (page - 1) * limit;
-    
-    // Build filter
-    let filter = {};
-    if (req.query.role) {
-      filter.role = req.query.role;
-    }
-    if (req.query.search) {
-      filter.$or = [
-        { name: { $regex: req.query.search, $options: 'i' } },
-        { email: { $regex: req.query.search, $options: 'i' } }
-      ];
-    }
-
-    const users = await User.find(filter)
-      .select('-password')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit);
-
-    const total = await User.countDocuments(filter);
-
-    res.json({
-      success: true,
-      count: users.length,
-      total,
-      pages: Math.ceil(total / limit),
-      currentPage: page,
-      data: users
-    });
-  } catch (err) {
-    console.error('Admin users fetch error:', err);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Failed to fetch users' 
-    });
-  }
-});
-
-
-router.get('/tasks', async (req, res) => {
-  try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
-    const skip = (page - 1) * limit;
-    
-   
-    let filter = {};
-    if (req.query.status) {
-      filter.status = req.query.status;
-    }
-    if (req.query.assignee) {
-      filter.assignee = req.query.assignee;
-    }
-
-    const tasks = await Task.find(filter)
-      .populate('assignee', 'name email')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit);
-
-    const total = await Task.countDocuments(filter);
-
-    res.json({
-      success: true,
-      count: tasks.length,
-      total,
-      pages: Math.ceil(total / limit),
-      currentPage: page,
-      data: tasks
-    });
-  } catch (err) {
-    console.error('Admin tasks fetch error:', err);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Failed to fetch tasks' 
-    });
-  }
-});
-
-router.get('/orders', async (req, res) => {
-  try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
-    const skip = (page - 1) * limit;
-    
-    let filter = {};
-    if (req.query.status) {
-      filter.status = req.query.status;
-    }
-    if (req.query.search) {
-      filter.$or = [
-        { _id: { $regex: req.query.search, $options: 'i' } },
-        { 'customer.name': { $regex: req.query.search, $options: 'i' } },
-        { 'customer.email': { $regex: req.query.search, $options: 'i' } }
-      ];
-    }
-
-    const orders = await Order.find(filter)
-      .populate('user', 'name email phone')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit);
-
-    const total = await Order.countDocuments(filter);
-
-    res.json({
-      success: true,
-      count: orders.length,
-      total,
-      pages: Math.ceil(total / limit),
-      currentPage: page,
-      data: orders
-    });
-  } catch (err) {
-    console.error('Admin orders fetch error:', err);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Failed to fetch orders' 
-    });
-  }
-});
-
-
-router.put('/orders/:id/status', async (req, res) => {
-  try {
-    const { status } = req.body;
-    const validStatuses = ['pending', 'processing', 'completed', 'cancelled'];
-    
-    if (!validStatuses.includes(status)) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid status. Must be one of: ' + validStatuses.join(', ')
-      });
-    }
-
-    const order = await Order.findByIdAndUpdate(
-      req.params.id,
-      { status },
-      { new: true, runValidators: true }
-    ).populate('user', 'name email phone');
-
-    if (!order) {
-      return res.status(404).json({
-        success: false,
-        error: 'Order not found'
-      });
-    }
-
-    res.json({
-      success: true,
-      data: order
-    });
-  } catch (err) {
-    console.error('Order status update error:', err);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Failed to update order status' 
-    });
-  }
-});
-
+// Dashboard statistics
 router.get('/dashboard/stats', async (req, res) => {
   try {
     const [
@@ -348,6 +170,45 @@ router.get('/dashboard/stats', async (req, res) => {
     res.status(500).json({ 
       success: false, 
       error: 'Failed to fetch dashboard statistics' 
+    });
+  }
+});
+
+// Order status update
+router.put('/orders/:id/status', async (req, res) => {
+  try {
+    const { status } = req.body;
+    const validStatuses = ['pending', 'processing', 'completed', 'cancelled'];
+    
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid status. Must be one of: ' + validStatuses.join(', ')
+      });
+    }
+
+    const order = await Order.findByIdAndUpdate(
+      req.params.id,
+      { status },
+      { new: true, runValidators: true }
+    ).populate('user', 'name email phone');
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        error: 'Order not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: order
+    });
+  } catch (err) {
+    console.error('Order status update error:', err);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to update order status' 
     });
   }
 });
