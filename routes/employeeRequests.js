@@ -1,18 +1,17 @@
-
+// routes/employeeRequestRoutes.js
 const express = require('express');
 const router = express.Router();
 const EmployeeRequest = require('../models/EmployeeRequest'); 
 
+// POST /api/employee-requests - Create new employee request
 router.post('/', async (req, res) => {
   try {
-    // Validate request data
     const { userId, userName, userEmail, position, experience, skills, message } = req.body;
     
     if (!userId || !position || !message) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    // Create new employee request
     const newRequest = new EmployeeRequest({
       userId,
       userName,
@@ -25,10 +24,8 @@ router.post('/', async (req, res) => {
       requestedAt: new Date()
     });
 
-    // Save to database
     await newRequest.save();
 
-    // Return success response
     res.status(201).json({
       message: 'Employee request submitted successfully',
       requestId: newRequest._id
@@ -39,6 +36,7 @@ router.post('/', async (req, res) => {
   }
 });
 
+// GET /api/employee-requests - Get all employee requests
 router.get('/', async (req, res) => {
   try {
     const requests = await EmployeeRequest.find().sort({ requestedAt: -1 });
@@ -55,6 +53,8 @@ router.get('/', async (req, res) => {
     });
   }
 });
+
+// PUT /api/employee-requests/:id - Update employee request status
 router.put('/:id', async (req, res) => {
   try {
     const { status } = req.body;
