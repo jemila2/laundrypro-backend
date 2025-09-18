@@ -103,6 +103,7 @@ const corsOptions = {
     const allowedOrigins = [
       'https://jemila2.github.io',
       'https://jemila2.github.io/cdclient-1',
+       'https://jemila2.github.io/client2',
       'http://localhost:3000',
       'http://localhost:10000',
       'http://localhost:5173',
