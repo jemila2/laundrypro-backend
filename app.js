@@ -130,6 +130,7 @@ const corsOptions = {
       'http://localhost:10000',
       'http://localhost:5173',
       'https://cdclient-1.onrender.com',
+        'https://perfect-victory.up.railway.app', // Add this
       'https://laundrypro-backend-production.up.railway.app'
     ];
     
