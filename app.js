@@ -34,25 +34,47 @@ if (!process.env.ADMIN_SECRET_KEY) {
   process.env.ADMIN_SECRET_KEY = 'ADMIN_SETUP_2024';
 }
 
-// --- REDIS CLIENT SETUP (Optional) ---
+// --- REDIS CLIENT SETUP (Fixed - Non-blocking) ---
 let redisClient;
+
+// Only create Redis client if ALL required variables exist
 if (process.env.REDIS_HOST && process.env.REDIS_PASSWORD) {
   redisClient = createClient({
     socket: {
       host: process.env.REDIS_HOST,
       port: parseInt(process.env.REDIS_PORT || '6379'),
+      connectTimeout: 3000, // 3 second timeout
+      lazyConnect: true, // Don't block app startup
     },
     username: process.env.REDIS_USERNAME || 'default',
     password: process.env.REDIS_PASSWORD,
   });
 
-  // Handle connection errors
-  redisClient.on('error', (err) => console.log('❌ Redis Client Error:', err.message));
-  redisClient.on('connect', () => console.log('🟡 Attempting to connect to Redis...'));
-  redisClient.on('ready', () => console.log('✅ Redis Client Connected and Ready!'));
+  redisClient.on('error', (err) => {
+    console.log('⚠️ Redis unavailable:', err.message);
+  });
+
+  // Connect but don't wait for it - start app immediately
+  redisClient.connect().catch(err => {
+    console.log('🟡 Redis connection failed, continuing without Redis');
+  });
 } else {
-  console.warn('⚠️  Redis configuration not found, running without Redis');
+  console.log('🟡 Redis not configured - running without Redis');
+  redisClient = null;
 }
+
+// --- REMOVE THE BLOCKING connectRedis FUNCTION ---
+// Delete or comment out this entire function:
+// const connectRedis = async () => {
+//   if (!redisClient) return false;
+//   try {
+//     await redisClient.connect();
+//     // ... rest of function ...
+//   } catch (error) {
+//     console.error('❌ Redis Connection Failed:', error.message);
+//     return false;
+//   }
+// };
 
 // --- DATABASE CONNECTION FUNCTION ---
 const connectDB = async () => {
